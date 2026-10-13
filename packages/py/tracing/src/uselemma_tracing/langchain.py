@@ -159,6 +159,25 @@ def _message_content(message: Any) -> Any:
     return message
 
 
+def _tool_message_error(output: Any) -> str | None:
+    # Handled ToolExceptions arrive via on_tool_end, not on_tool_error.
+    if _get(output, "type") != "tool" or _get(output, "status") != "error":
+        return tool_result_error(output)
+    content = _message_content(output)
+    if isinstance(content, str):
+        text = content.strip()
+    elif isinstance(content, list):
+        text = "\n".join(
+            part if isinstance(part, str) else _get(part, "text", "")
+            for part in content
+            if isinstance(part, str)
+            or (_get(part, "type") == "text" and isinstance(_get(part, "text"), str))
+        ).strip()
+    else:
+        text = ""
+    return text or "Tool returned an error result"
+
+
 def _role_from_class_name(name: str) -> str | None:
     lower = name.lower()
     if "human" in lower or lower == "user":
@@ -1318,7 +1337,7 @@ class LemmaLangChainCallbackHandler(_CallbackHandlerBase):
         if run is None:
             return
         ended_at = _now()
-        soft_error = tool_result_error(output)
+        soft_error = _tool_message_error(output)
         if soft_error is not None:
             end_run_handle(
                 run,
